@@ -1,0 +1,50 @@
+version: 2.1
+workflows:
+  version: 2
+  salsify_devx_test_gem:
+    jobs:
+      - build:
+          context: Salsify
+          matrix:
+            parameters:
+              ruby_version: [ "2.6.5", "2.7.2", "3.0.0" ]
+jobs:
+  build:
+    parameters:
+      ruby_version:
+        type: string
+    docker:
+      - image: salsify/ruby_ci:<< parameters.ruby_version >>
+    environment:
+      RACK_ENV: "test"
+      RAILS_ENV: "test"
+      CIRCLE_TEST_REPORTS: "test-results"
+    working_directory: ~/salsify_devx_test_gem
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - v1-gems-ruby-<< parameters.ruby_version >>-{{ checksum "salsify_devx_test_gem.gemspec" }}-{{ checksum "Gemfile" }}
+            - v1-gems-ruby-<< parameters.ruby_version >>-
+      - run:
+          name: Install Gems
+          command: |
+            if ! bundle check --path=vendor/bundle; then
+              bundle config set --local path 'vendor/bundle'
+              bundle install --jobs=4 --retry=3
+              bundle clean
+            fi
+      - save_cache:
+          key: v1-gems-ruby-<< parameters.ruby_version >>-{{ checksum "salsify_devx_test_gem.gemspec" }}-{{ checksum "Gemfile" }}
+          paths:
+            - "vendor/bundle"
+            - "gemfiles/vendor/bundle"
+      - run:
+          name: Run Rubocop
+          command: bundle exec rubocop
+      - run:
+          name: Run Tests
+          command: |
+            bundle exec rspec --format RspecJunitFormatter --out $CIRCLE_TEST_REPORTS/rspec/junit.xml --format progress spec
+      - store_test_results:
+          path: "test-results"
